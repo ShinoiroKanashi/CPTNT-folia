@@ -2,21 +2,26 @@ package com.ghostchu.coreprotecttnt;
 
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
+import org.bukkit.Server;
 import org.bukkit.configuration.Configuration;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 
 public class Util {
-    public static void broadcastNearPlayers(Location location, String message) {
+    public static void broadcastNearPlayers(Server server, Location location, String message) {
         if (message == null || message.isEmpty()) {
             return; // Do not send empty message
         }
         String msg = ChatColor.translateAlternateColorCodes('&', message);
-        for (Entity around : location.getWorld().getNearbyEntities(location, 15, 15, 15, (entity) -> entity instanceof Player)) {
-            around.sendMessage(msg);
-        }
 
+        Main.instance.getServer().getRegionScheduler().execute(Main.instance, location, () -> {
+            for (Entity around : location.getWorld().getNearbyEntities(location, 15, 15, 15, (entity) -> entity instanceof Player)) {
+                Main.instance.getServer().getGlobalRegionScheduler().execute(Main.instance, () -> {
+                    ((Player) around).sendMessage(msg);
+                });
+            }
+        });
     }
 
     public static ConfigurationSection bakeConfigSection(Configuration configuration, String path) {

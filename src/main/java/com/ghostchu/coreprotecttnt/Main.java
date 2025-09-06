@@ -33,6 +33,7 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 public class Main extends JavaPlugin implements Listener {
+    public static Main instance;
     private final Cache<Object, String> probablyCache = CacheBuilder
             .newBuilder()
             .expireAfterAccess(1, TimeUnit.HOURS)
@@ -44,11 +45,12 @@ public class Main extends JavaPlugin implements Listener {
 
     @Override
     public void onEnable() {
-        Bukkit.getPluginManager().registerEvents(this, this);
+        instance = this;
+        getServer().getPluginManager().registerEvents(this, this);
         saveDefaultConfig();
-        Plugin depend = Bukkit.getPluginManager().getPlugin("CoreProtect");
+        Plugin depend = getServer().getPluginManager().getPlugin("CoreProtect");
         if (depend == null) {
-            getPluginLoader().disablePlugin(this);
+            getServer().getPluginManager().disablePlugin(this);
             return;
         }
         api = ((CoreProtect) depend).getAPI();
@@ -100,7 +102,7 @@ public class Main extends JavaPlugin implements Listener {
         if (probablyCauses == null) {
             if (section.getBoolean("disable-unknown", true)) {
                 e.blockList().clear();
-                Util.broadcastNearPlayers(location, section.getString("alert"));
+                Util.broadcastNearPlayers(getServer(), location, section.getString("alert"));
             }
         }
         // Found causes, let's begin for logging
@@ -116,7 +118,7 @@ public class Main extends JavaPlugin implements Listener {
     }
 
     @EventHandler(ignoreCancelled = true, priority = EventPriority.MONITOR)
-    public void onBlockBreak(BlockPlaceEvent event) {
+    public void onBlockBreakEvent(BlockBreakEvent event) {
         // We can't check the hanging in this event, may cause server lagging, just store it
         // Maybe a player break the tnt and a plugin igniting it?
         probablyCache.put(event.getBlock().getLocation(), event.getPlayer().getName());
@@ -289,24 +291,24 @@ public class Main extends JavaPlugin implements Listener {
         if (!section.getBoolean("enable", true)) {
             return;
         }
-        ItemFrame itemFrame = (ItemFrame) e.getEntity();
-        if (itemFrame.getItem().getType().isAir() || itemFrame.isInvulnerable()) {
+        Painting painting = (Painting) e.getEntity();
+        if (painting.isInvulnerable()) {
             return;
         }
 
         if (e.getDamager() instanceof Player) {
-            api.logInteraction(e.getDamager().getName(), itemFrame.getLocation());
-            api.logRemoval(e.getDamager().getName(), itemFrame.getLocation(), itemFrame.getItem().getType(), null);
+            api.logInteraction(e.getDamager().getName(), painting.getLocation());
+            api.logRemoval(e.getDamager().getName(), painting.getLocation(), Material.PAINTING, null);
         } else {
             String reason = probablyCache.getIfPresent(e.getDamager());
             if (reason != null) {
-                api.logInteraction("#" + e.getDamager().getName() + "-" + reason, itemFrame.getLocation());
-                api.logRemoval("#" + e.getDamager().getName() + "-" + reason, itemFrame.getLocation(), itemFrame.getItem().getType(), null);
+                api.logInteraction("#" + e.getDamager().getName() + "-" + reason, painting.getLocation());
+                api.logRemoval("#" + e.getDamager().getName() + "-" + reason, painting.getLocation(), Material.PAINTING, null);
             } else {
                 if (section.getBoolean("disable-unknown")) {
                     e.setCancelled(true);
                     e.setDamage(0.0d);
-                    Util.broadcastNearPlayers(e.getEntity().getLocation(), section.getString("alert"));
+                    Util.broadcastNearPlayers(getServer(), e.getEntity().getLocation(), section.getString("alert"));
                 }
             }
         }
@@ -380,14 +382,14 @@ public class Main extends JavaPlugin implements Listener {
                 api.logRemoval("#fire-" + probablyCache.getIfPresent(e.getIgnitingBlock().getLocation()), e.getBlock().getLocation(), e.getBlock().getType(), e.getBlock().getBlockData());
             } else if (section.getBoolean("disable-unknown", true)) {
                 e.setCancelled(true);
-                Util.broadcastNearPlayers(e.getIgnitingBlock().getLocation(), section.getString("alert"));
+                Util.broadcastNearPlayers(getServer(), e.getIgnitingBlock().getLocation(), section.getString("alert"));
             }
         }
     }
 
     @EventHandler(ignoreCancelled = true, priority = EventPriority.LOWEST)
     public void onBombHit(ProjectileHitEvent e) {
-        if (e.getHitEntity() instanceof ExplosiveMinecart || e.getEntityType() == EntityType.ENDER_CRYSTAL) {
+        if (e.getHitEntity() instanceof ExplosiveMinecart || e.getHitEntity() instanceof EnderCrystal) {
             if (e.getEntity().getShooter() != null && e.getEntity().getShooter() instanceof Player) {
                 if (e.getHitEntity() != null) {
                     String sourceFromCache = probablyCache.getIfPresent(e.getEntity());
@@ -434,7 +436,7 @@ public class Main extends JavaPlugin implements Listener {
                 }
                 e.blockList().clear();
                 e.getEntity().remove();
-                Util.broadcastNearPlayers(entity.getLocation(), section.getString("alert"));
+                Util.broadcastNearPlayers(getServer(), entity.getLocation(), section.getString("alert"));
             }
             pendingRemoval.forEach(probablyCache::invalidate);
             return;
@@ -460,7 +462,7 @@ public class Main extends JavaPlugin implements Listener {
                     }
                     e.blockList().clear();
                     e.getEntity().remove();
-                    Util.broadcastNearPlayers(e.getLocation(), section.getString("alert"));
+                    Util.broadcastNearPlayers(getServer(), e.getLocation(), section.getString("alert"));
                     return;
                 }
             }
@@ -478,7 +480,7 @@ public class Main extends JavaPlugin implements Listener {
                 if (section.getBoolean("disable-unknown")) {
                     e.blockList().clear();
                     e.getEntity().remove();
-                    Util.broadcastNearPlayers(entity.getLocation(), section.getString("alert"));
+                    Util.broadcastNearPlayers(getServer(), entity.getLocation(), section.getString("alert"));
                 }
             }
             pendingRemoval.forEach(probablyCache::invalidate);
@@ -509,7 +511,7 @@ public class Main extends JavaPlugin implements Listener {
                     pendingRemoval.add(entity);
                 } else if (section.getBoolean("disable-unknown")) {
                     e.blockList().clear();
-                    Util.broadcastNearPlayers(entity.getLocation(), section.getString("alert"));
+                    Util.broadcastNearPlayers(getServer(), entity.getLocation(), section.getString("alert"));
                 }
             }
             pendingRemoval.forEach(probablyCache::invalidate);
@@ -537,7 +539,7 @@ public class Main extends JavaPlugin implements Listener {
         } else if (section.getBoolean("disable-unknown")) {
             e.blockList().clear();
             e.getEntity().remove();
-            Util.broadcastNearPlayers(entity.getLocation(), section.getString("alert"));
+            Util.broadcastNearPlayers(getServer(), entity.getLocation(), section.getString("alert"));
         }
     }
 }
